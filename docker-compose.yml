@@ -1,0 +1,101 @@
+version: '3'
+services:
+    # https://www.devpowerup.com/php-docker
+    app:
+        build:
+            context: .
+            dockerfile: ./php/Dockerfile
+        image: halo-php
+        container_name: halo-app
+        tty: true
+        restart: unless-stopped
+        environment:
+            DB_CONNECTION: pgsql
+            DB_HOST: db #services name
+            DB_PORT: ${DB_PORT}
+            DB_DATABASE: ${DB_DATABASE}
+            DB_USERNAME: ${DB_USERNAME}
+            DB_PASSWORD: ${DB_PASSWORD}
+        #     DATABASE_URL: postgresql://produser:devsecret@127.0.0.1:5432/proddb
+        working_dir: /var/www
+        volumes:
+            - ./code/:/var/www
+            - ./php/logs/:/var/www/storage/logs
+            - ./php/local.ini:/usr/local/etc/php/conf.d/local.ini
+        networks:
+            - app-network
+          
+    webserver:
+        image: nginx:alpine
+        container_name: halo-webserver
+        restart: unless-stopped
+        tty: true
+        ports:
+            - "81:80"
+            - "443:443"
+        volumes:
+            - ./code/:/var/www
+            - ./nginx/conf.d/:/etc/nginx/conf.d/default.conf
+            - ./nginx/logs/:/var/log/nginx
+        depends_on:
+            - app
+            - db
+        networks:
+            - app-network
+
+    db:
+        image: postgres:12
+        container_name: halo-db
+        restart: unless-stopped
+        volumes:
+            - ./postgres/prodcution:/var/lib/postgresql/data      
+        environment:
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
+            POSTGRES_DB: ${DB_DATABASE}
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+        ports:
+            - "5440:5432"
+        networks:
+            - app-network
+
+    dbdevel:
+        image: postgres:12
+        container_name: halo-dbdevel
+        restart: always
+        volumes:
+            - ./postgres/development:/var/lib/postgresql/data
+        environment:
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
+            POSTGRES_DB: ${DB_DATABASE}
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+        ports:
+            - "54321:5431"
+
+    redis:
+        image: redis:alpine
+        container_name: halo-redis
+        restart: unless-stopped
+        networks:
+            - app-network
+            
+    # https://github.com/purinda/docker-laravel/tree/master/elk/logstash
+    elk:
+        image: willdurand/elk
+        container_name: halo-elk
+        restart: unless-stopped
+        volumes:
+            - ./elk/logstash:/etc/logstash
+            - ./elk/logstash/patterns:/opt/logstash/patterns
+        volumes_from:
+            - app
+            - webserver
+        ports:
+            - 82:80
+        networks:
+            - app-network
+
+networks:
+    app-network:
+        driver: bridge
